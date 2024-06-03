@@ -8,46 +8,74 @@ from settings import *
 class Saw(pygame.sprite.Sprite):
     def __init__(self, walls):
         super().__init__()
-        self.retention = 1.34  # Retention factor to simulate a stronger bounce
-        self.gravity = GRAVITY  # Gravity effect
-        self.damping = 0.99  # Damping factor to gradually slow down the saw
-        self.wall_thickness = WALL_THICKNESS
-        self.radius = 50
         self.walls = walls
+        self.retention = 1.34
+        self.gravity = GRAVITY
+        self.damping = 0.99
+        self.radius = 50
         self.image = pygame.transform.scale(pygame.image.load('assets/Circular_tipped_saw_blade_sketch1.svg'), (self.radius, self.radius)).convert_alpha()
         self.rect = self.image.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2))
-        self.speed_x = SAW_SPEED
-        self.speed_y = SAW_SPEED
+        self.speed_x = 0
+        self.speed_y = 0
+        self.dragging = False
+        self.start_pos = None
+        self.MAX_SPEED_X = 20
+        self.MAX_SPEED_Y = 20
+    def handle_events(self, event):
+        if event.type == pygame.MOUSEBUTTONDOWN:
+            if self.rect.collidepoint(event.pos):
+                self.dragging = True
+                self.start_pos = pygame.Vector2(event.pos)
+                self.speed_x = 0
+                self.speed_y = 0
+        elif event.type == pygame.MOUSEBUTTONUP and self.dragging:
+            self.dragging = False
+            end_pos = pygame.Vector2(event.pos)
+            drag_vector = (self.start_pos - end_pos) * 0.1
+            self.speed_x, self.speed_y = drag_vector.x, drag_vector.y
+            self.constrain_speed()
+        elif event.type == pygame.MOUSEMOTION and self.dragging:
+            self.rect.center = event.pos
+
+    def update(self):
+        if not self.dragging:
+            self.apply_gravity()
+            self.rect.x += self.speed_x
+            self.rect.y += self.speed_y
+            self.walls.check_collision_with_line(self)
+            self.apply_damping()
+            self.check_bounds()
+
+    def constrain_speed(self):
+        """ Ensure the speed does not exceed maximum limits. """
+        if abs(self.speed_x) > self.MAX_SPEED_X:
+            self.speed_x = self.MAX_SPEED_X if self.speed_x > 0 else -self.MAX_SPEED_X
+        if abs(self.speed_y) > self.MAX_SPEED_Y:
+            self.speed_y = self.MAX_SPEED_Y if self.speed_y > 0 else -self.MAX_SPEED_Y
 
     def apply_gravity(self):
-        if self.rect.bottom < SCREEN_HEIGHT - self.wall_thickness:
+        if self.rect.bottom < SCREEN_HEIGHT - self.walls.wall_thickness:
             self.speed_y += self.gravity
 
     def apply_damping(self):
         self.speed_x *= self.damping
         self.speed_y *= self.damping
+        self.constrain_speed()
 
-    def update(self):
-        self.apply_gravity()
-        self.rect.x += self.speed_x
-        self.rect.y += self.speed_y
-        self.walls.check_collision_with_line(self)
-
-        if self.rect.left < self.wall_thickness:
-            self.rect.left = self.wall_thickness
+    def check_bounds(self):
+        if self.rect.left < self.walls.wall_thickness:
+            self.rect.left = self.walls.wall_thickness
             self.speed_x = -self.speed_x * self.retention
-        elif self.rect.right > SCREEN_WIDTH - self.wall_thickness:
-            self.rect.right = SCREEN_WIDTH - self.wall_thickness
+        elif self.rect.right > SCREEN_WIDTH - self.walls.wall_thickness:
+            self.rect.right = SCREEN_WIDTH - self.walls.wall_thickness
             self.speed_x = -self.speed_x * self.retention
-
-        if self.rect.top < self.wall_thickness:
-            self.rect.top = self.wall_thickness
+        if self.rect.top < self.walls.wall_thickness:
+            self.rect.top = self.walls.wall_thickness
             self.speed_y = -self.speed_y * self.retention
-        elif self.rect.bottom > SCREEN_HEIGHT - self.wall_thickness:
-            self.rect.bottom = SCREEN_HEIGHT - self.wall_thickness
+        elif self.rect.bottom > SCREEN_HEIGHT - self.walls.wall_thickness:
+            self.rect.bottom = SCREEN_HEIGHT - self.walls.wall_thickness
             self.speed_y = -self.speed_y * self.retention
 
-        self.apply_damping()
 
 class Balloon(pygame.sprite.Sprite):
     def __init__(self, x, y, radius=25, walls=''):

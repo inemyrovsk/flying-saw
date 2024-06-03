@@ -31,6 +31,8 @@ class Game:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 self.running = False
+            self.saw.handle_events(event)
+
 
     def update(self):
         self.all_sprites.update()
