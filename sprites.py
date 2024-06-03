@@ -1,62 +1,161 @@
 # sprites.py
+import os
+
 import pygame
 import random
+import math
 from settings import *
-
-
 class Saw(pygame.sprite.Sprite):
-    def __init__(self):
+    def __init__(self, walls):
         super().__init__()
-        # self.mass = mass
-        self.retention = 2
-        self.bounce_stop = 50
-        self.gravity = 10
-
+        self.retention = 1.34  # Retention factor to simulate a stronger bounce
+        self.gravity = GRAVITY  # Gravity effect
+        self.damping = 0.99  # Damping factor to gradually slow down the saw
         self.wall_thickness = WALL_THICKNESS
         self.radius = 50
-        self.image = pygame.transform.scale(pygame.image.load('assets/Circular_tipped_saw_blade_sketch1.svg'),
-                                            (self.radius, self.radius)).convert_alpha()
-
+        self.walls = walls
+        self.image = pygame.transform.scale(pygame.image.load('assets/Circular_tipped_saw_blade_sketch1.svg'), (self.radius, self.radius)).convert_alpha()
         self.rect = self.image.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2))
         self.speed_x = SAW_SPEED
         self.speed_y = SAW_SPEED
 
-    def check_gravity(self):
-        if self.rect.y < SCREEN_HEIGHT - self.radius - (self.wall_thickness):
+    def apply_gravity(self):
+        if self.rect.bottom < SCREEN_HEIGHT - self.wall_thickness:
             self.speed_y += self.gravity
-        else:
-            if self.speed_y > self.bounce_stop:
-                self.speed_y = self.speed_y * -1 * self.retention
 
+    def apply_damping(self):
+        self.speed_x *= self.damping
+        self.speed_y *= self.damping
 
     def update(self):
-        self.check_gravity()
+        self.apply_gravity()
         self.rect.x += self.speed_x
         self.rect.y += self.speed_y
-        print("x: ", self.rect.x)
-        print("y: ", self.rect.y)
-        if self.rect.left < self.wall_thickness / 2 or self.rect.right > SCREEN_WIDTH - (self.wall_thickness / 2):
-            self.speed_x = -self.speed_x
-        if self.rect.top < self.wall_thickness / 2 or self.rect.bottom > SCREEN_HEIGHT - (self.wall_thickness / 2):
-            self.speed_y = -self.speed_y
+        self.walls.check_collision_with_line(self)
 
+        if self.rect.left < self.wall_thickness:
+            self.rect.left = self.wall_thickness
+            self.speed_x = -self.speed_x * self.retention
+        elif self.rect.right > SCREEN_WIDTH - self.wall_thickness:
+            self.rect.right = SCREEN_WIDTH - self.wall_thickness
+            self.speed_x = -self.speed_x * self.retention
+
+        if self.rect.top < self.wall_thickness:
+            self.rect.top = self.wall_thickness
+            self.speed_y = -self.speed_y * self.retention
+        elif self.rect.bottom > SCREEN_HEIGHT - self.wall_thickness:
+            self.rect.bottom = SCREEN_HEIGHT - self.wall_thickness
+            self.speed_y = -self.speed_y * self.retention
+
+        self.apply_damping()
 
 class Balloon(pygame.sprite.Sprite):
-    def __init__(self):
+    def __init__(self, x, y, radius=25, walls=''):
         super().__init__()
-        self.image = pygame.Surface((30, 50), pygame.SRCALPHA)
-        pygame.draw.ellipse(self.image, (255, 0, 0), [0, 0, 30, 50])
-        self.rect = self.image.get_rect(center=(random.randint(0, SCREEN_WIDTH), random.randint(0, SCREEN_HEIGHT)))
+        self.walls = walls
+        self.radius = radius
+        self.gravity = GRAVITY  # Gravity effect
+        self.speed_y = 0
+        self.speed_x = 0  # Add horizontal speed
+        self.wall_thickness = WALL_THICKNESS
+        self.image = pygame.Surface((self.radius * 2, self.radius * 2), pygame.SRCALPHA)
+        self.image = pygame.transform.scale(pygame.image.load('assets/ballons/' + random.choice(os.listdir('assets/ballons'))), (self.radius * 2, self.radius * 2)).convert_alpha()
+        self.rect = self.image.get_rect(center=(x, y))
+        self.pos = pygame.Vector2(self.rect.center)
 
+
+    def apply_gravity(self):
+        if self.rect.bottom < SCREEN_HEIGHT - self.wall_thickness:
+            self.speed_y += self.gravity
+        else:
+            self.rect.bottom = SCREEN_HEIGHT - self.wall_thickness
+            self.speed_y = -self.speed_y * 0.8  # bounce effect with retention
+
+        if self.rect.left < self.wall_thickness:
+            self.rect.left = self.wall_thickness
+            self.speed_x = -self.speed_x * 0.8
+        elif self.rect.right > SCREEN_WIDTH - self.wall_thickness:
+            self.rect.right = SCREEN_WIDTH - self.wall_thickness
+            self.speed_x = -self.speed_x * 0.8
+
+    def update(self):
+        self.apply_gravity()
+        self.pos.x += self.speed_x
+        self.pos.y += self.speed_y
+        self.rect.center = self.pos
+        self.walls.check_collision_with_line(self)
+
+
+def handle_balloon_collisions(balloons):
+    for balloon in balloons:
+        for other_balloon in balloons:
+            if balloon != other_balloon and balloon.pos.distance_to(other_balloon.pos) < balloon.radius + other_balloon.radius:
+                resolve_collision(balloon, other_balloon)
+
+def resolve_collision(balloon1, balloon2):
+    # Calculate the vector between the balloons
+    collision_vector = balloon1.pos - balloon2.pos
+    distance = collision_vector.length()
+
+    if distance == 0:
+        distance = 1  # Prevent division by zero
+
+    overlap = 0.5 * (balloon1.radius + balloon2.radius - distance)
+
+    # Normalize the collision vector
+    collision_vector.normalize_ip()
+
+    # Displace the balloons based on the overlap
+    balloon1.pos += collision_vector * overlap
+    balloon2.pos -= collision_vector * overlap
+
+    # Update the rect positions
+    balloon1.rect.center = balloon1.pos
+    balloon2.rect.center = balloon2.pos
+
+    # Calculate velocities along the collision vector
+    velocity1 = pygame.Vector2(balloon1.speed_x, balloon1.speed_y)
+    velocity2 = pygame.Vector2(balloon2.speed_x, balloon2.speed_y)
+    velocity1_along_collision = velocity1.dot(collision_vector)
+    velocity2_along_collision = velocity2.dot(collision_vector)
+
+    # Swap the velocities along the collision vector
+    new_velocity1 = velocity1 - collision_vector * velocity1_along_collision + collision_vector * velocity2_along_collision
+    new_velocity2 = velocity2 - collision_vector * velocity2_along_collision + collision_vector * velocity1_along_collision
+
+    balloon1.speed_x, balloon1.speed_y = new_velocity1
+    balloon2.speed_x, balloon2.speed_y = new_velocity2
 
 class Walls:
     def __init__(self):
         self.wall_thickness = WALL_THICKNESS
 
+        self.lines = [
+            ((0, 0), (SCREEN_WIDTH // 2.4, SCREEN_HEIGHT // 3)),
+            ((SCREEN_WIDTH, 0), (SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2))
+        ]
+
+    def check_collision_with_line(self, sprite):
+        for line_start, line_end in self.lines:
+            if sprite.rect.clipline(line_start, line_end):
+                normal = self.calculate_normal(line_start, line_end)
+                sprite.speed = reflect(pygame.Vector2(sprite.speed_x, sprite.speed_y), normal)
+                sprite.speed_x, sprite.speed_y = sprite.speed.x, sprite.speed.y
+
+    def calculate_normal(self, start, end):
+        """ Calculate the normal vector perpendicular to the line. """
+        dx, dy = pygame.Vector2(end) - pygame.Vector2(start)
+        normal = pygame.Vector2(-dy, dx)
+        normal.normalize_ip()
+        return normal
+
     def draw(self, screen):
-        left = pygame.draw.line(screen, 'white', (0, 0), (0, SCREEN_HEIGHT), self.wall_thickness)
-        right = pygame.draw.line(screen, 'white', (SCREEN_WIDTH, 0), (SCREEN_WIDTH, SCREEN_HEIGHT), self.wall_thickness)
-        top = pygame.draw.line(screen, 'white', (0, 0), (SCREEN_WIDTH, 0), self.wall_thickness)
-        bottom = pygame.draw.line(screen, 'white', (0, SCREEN_HEIGHT), (SCREEN_WIDTH, SCREEN_HEIGHT),
-                                  self.wall_thickness)
-        return [left, right, top, bottom]
+        pygame.draw.rect(screen, WHITE, (0, 0, SCREEN_WIDTH, SCREEN_HEIGHT), self.wall_thickness)
+        for line in self.lines:
+            pygame.draw.line(screen, WHITE, line[0], line[1], self.wall_thickness)
+
+def reflect(velocity, normal):
+    """ Reflects a velocity vector off a surface with a given normal vector. """
+    normal = pygame.Vector2(normal)
+    normal.normalize_ip()
+    return velocity - 2 * velocity.dot(normal) * normal
