@@ -12,7 +12,7 @@ class Saw(pygame.sprite.Sprite):
         self.retention = 1.34
         self.gravity = GRAVITY
         self.damping = 0.99
-        self.radius = 50
+        self.radius = 75
         self.image = pygame.transform.scale(pygame.image.load('assets/Circular_tipped_saw_blade_sketch1.svg'), (self.radius, self.radius)).convert_alpha()
         self.rect = self.image.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2))
         self.speed_x = 0
@@ -78,7 +78,7 @@ class Saw(pygame.sprite.Sprite):
 
 
 class Balloon(pygame.sprite.Sprite):
-    def __init__(self, x, y, radius=25, walls=''):
+    def __init__(self, x, y, radius=50, walls=''):
         super().__init__()
         self.walls = walls
         self.radius = radius
